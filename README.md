@@ -37,8 +37,8 @@ A robust, scalable real-time notification system built with Node.js, Express, So
 ## 📋 Prerequisites
 
 - Node.js (v14 or higher)
-- PostgreSQL (v12 or higher)
 - npm or yarn
+- Neon PostgreSQL account (free tier available)
 
 ## 🛠️ Installation & Setup
 
@@ -182,7 +182,7 @@ http://localhost:3000
 ### System
 - `GET /health` - Health check and WebSocket stats
 
-For detailed API documentation, see [API_DOCUMENTATION.md](API_DOCUMENTATION.md)
+For detailed API documentation, see [swagger.json](swagger.json) and [WEBSOCKET_EVENTS.md](WEBSOCKET_EVENTS.md)
 
 ## 🔌 WebSocket Events
 
@@ -337,7 +337,13 @@ notification-task-setup/
 ├── server.js                # Main server file
 ├── package.json             # Dependencies and scripts
 ├── env.example              # Environment variables template
-├── API_DOCUMENTATION.md     # Detailed API documentation
+├── swagger.json             # API documentation (Swagger/OpenAPI)
+├── WEBSOCKET_EVENTS.md      # WebSocket events documentation
+├── ARCHITECTURE_OVERVIEW.md # System architecture documentation
+├── DEMO_VIDEO_SCRIPT.md     # Demo video script
+├── NEON_SETUP.md            # Neon PostgreSQL setup guide
+├── quick-signup.js          # Quick user creation script
+├── view-data.js             # Database viewing script
 └── README.md                # This file
 ```
 

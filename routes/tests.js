@@ -12,6 +12,54 @@ const scheduleTestSchema = Joi.object({
   testName: Joi.string().min(1).max(255).required()
 });
 
+// Validation schema for broadcast notifications
+const broadcastNotificationSchema = Joi.object({
+  message: Joi.string().min(1).max(500).required(),
+  type: Joi.string().min(1).max(50).optional().default('BROADCAST')
+});
+
+// Broadcast notification to all connected users
+router.post('/broadcast', authenticateToken, async (req, res) => {
+  try {
+    // Validate input
+    const { error, value } = broadcastNotificationSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ error: error.details[0].message });
+    }
+
+    const { message, type } = value;
+
+    // Create notification payload
+    const notification = {
+      type: type,
+      message: message,
+      timestamp: new Date().toISOString(),
+      broadcast: true
+    };
+
+    // Broadcast to all connected users
+    websocketManager.broadcastNotification(notification, req.app.get('io'));
+
+    // Get stats for response
+    const stats = websocketManager.getStats();
+
+    res.status(200).json({
+      message: 'Notification broadcasted successfully',
+      notification: {
+        sent: true,
+        type: type,
+        message: message,
+        totalUsers: stats.totalUsers,
+        totalConnections: stats.totalConnections
+      }
+    });
+
+  } catch (error) {
+    console.error('Broadcast notification error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Schedule a test and trigger notifications
 router.post('/schedule', authenticateToken, async (req, res) => {
   try {

@@ -274,6 +274,10 @@
                 <div class="section">
                     <h2>🔐 User Authentication</h2>
                     
+                    <div id="currentUser" class="status" style="display: none; background: #e8f5e8; color: #155724; border: 1px solid #c3e6cb;">
+                        <strong>Current User:</strong> <span id="currentUserName">Not logged in</span>
+                    </div>
+                    
                     <div class="form-group">
                         <label for="email">Email:</label>
                         <input type="email" id="email" placeholder="Enter your email">
@@ -291,6 +295,7 @@
                     
                     <button onclick="signup()">Sign Up</button>
                     <button onclick="login()">Login</button>
+                    <button onclick="logout()" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">Logout</button>
                     
                     <div id="authStatus" class="status" style="display: none;"></div>
                 </div>
@@ -368,6 +373,97 @@
         let authToken = null;
         let notificationCount = 0;
 
+        // Token management functions
+        function getStoredToken() {
+            return localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+        }
+
+        function storeToken(token, rememberMe = false) {
+            if (rememberMe) {
+                localStorage.setItem('authToken', token);
+            } else {
+                sessionStorage.setItem('authToken', token);
+            }
+        }
+
+        function clearStoredToken() {
+            localStorage.removeItem('authToken');
+            sessionStorage.removeItem('authToken');
+        }
+
+        function getStoredUserId() {
+            return localStorage.getItem('userId') || sessionStorage.getItem('userId');
+        }
+
+        function storeUserId(userId, rememberMe = false) {
+            if (rememberMe) {
+                localStorage.setItem('userId', userId);
+            } else {
+                sessionStorage.setItem('userId', userId);
+            }
+        }
+
+        function clearStoredUserData() {
+            localStorage.removeItem('userId');
+            sessionStorage.removeItem('userId');
+            clearStoredToken();
+        }
+
+        // Initialize token on page load
+        function initializeAuth() {
+            const storedToken = getStoredToken();
+            const storedUserId = getStoredUserId();
+            
+            if (storedToken) {
+                authToken = storedToken;
+                if (storedUserId) {
+                    document.getElementById('userId').value = storedUserId;
+                }
+                console.log('Token restored from storage');
+                
+                // Try to get user info to display current user
+                fetchUserInfo();
+            }
+        }
+
+        // Fetch user info to display current user
+        async function fetchUserInfo() {
+            if (!authToken) return;
+            
+            try {
+                const response = await fetch('/api/auth/profile', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    updateCurrentUserDisplay(data.user.name);
+                } else {
+                    // Token might be invalid, clear it
+                    clearStoredUserData();
+                    authToken = null;
+                }
+            } catch (error) {
+                console.error('Error fetching user info:', error);
+            }
+        }
+
+        // Call initialization when page loads
+        document.addEventListener('DOMContentLoaded', initializeAuth);
+
+        // Update current user display
+        function updateCurrentUserDisplay(userName) {
+            const currentUserDiv = document.getElementById('currentUser');
+            const currentUserNameSpan = document.getElementById('currentUserName');
+            
+            if (userName) {
+                currentUserNameSpan.textContent = userName;
+                currentUserDiv.style.display = 'block';
+            } else {
+                currentUserDiv.style.display = 'none';
+            }
+        }
+
         // Tab switching
         function switchTab(tabName) {
             document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
@@ -399,8 +495,11 @@
 
                 if (response.ok) {
                     authToken = data.token;
+                    storeToken(data.token, true); // Store in localStorage for persistence
+                    storeUserId(data.user.id, true);
                     showAuthStatus(`Signup successful! Welcome ${data.user.name}`, 'success');
                     document.getElementById('userId').value = data.user.id;
+                    updateCurrentUserDisplay(data.user.name);
                 } else {
                     showAuthStatus(data.error, 'error');
                 }
@@ -429,8 +528,11 @@
 
                 if (response.ok) {
                     authToken = data.token;
+                    storeToken(data.token, true); // Store in localStorage for persistence
+                    storeUserId(data.user.id, true);
                     showAuthStatus(`Login successful! Welcome back ${data.user.name}`, 'success');
                     document.getElementById('userId').value = data.user.id;
+                    updateCurrentUserDisplay(data.user.name);
                 } else {
                     showAuthStatus(data.error, 'error');
                 }
@@ -446,6 +548,35 @@
             status.style.display = 'block';
         }
 
+        function logout() {
+            // Disconnect WebSocket if connected
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+            
+            // Clear stored data
+            clearStoredUserData();
+            authToken = null;
+            
+            // Clear form fields
+            document.getElementById('email').value = '';
+            document.getElementById('password').value = '';
+            document.getElementById('name').value = '';
+            document.getElementById('userId').value = '';
+            
+            // Update UI
+            showAuthStatus('Logged out successfully', 'success');
+            updateCurrentUserDisplay(null);
+            
+            // Reset WebSocket status
+            updateWsStatus('disconnected', 'Disconnected from WebSocket');
+            document.getElementById('connectBtn').disabled = false;
+            document.getElementById('disconnectBtn').disabled = true;
+            
+            console.log('User logged out');
+        }
+
         // WebSocket functions
         function connectWebSocket() {
             if (!authToken) {
@@ -453,35 +584,68 @@
                 return;
             }
 
+            // Disconnect existing connection if any
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+
+            updateWsStatus('connecting', 'Connecting to WebSocket...');
+
             socket = io({
-                auth: { token: authToken }
+                auth: { token: authToken },
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+                timeout: 10000
             });
 
             socket.on('connect', () => {
                 updateWsStatus('connected', 'Connected to WebSocket');
                 document.getElementById('connectBtn').disabled = true;
                 document.getElementById('disconnectBtn').disabled = false;
+                console.log('WebSocket connected successfully');
             });
 
-            socket.on('disconnect', () => {
-                updateWsStatus('disconnected', 'Disconnected from WebSocket');
+            socket.on('disconnect', (reason) => {
+                updateWsStatus('disconnected', `Disconnected from WebSocket: ${reason}`);
                 document.getElementById('connectBtn').disabled = false;
                 document.getElementById('disconnectBtn').disabled = true;
+                console.log('WebSocket disconnected:', reason);
             });
 
             socket.on('connected', (data) => {
-                addNotification('System', 'Connected to notification service', 'system');
+                addNotification('System', `Connected to notification service as ${data.user.name}`, 'system');
                 updateConnectionCount();
+                console.log('WebSocket authenticated:', data.user.name);
             });
 
             socket.on('notification', (notification) => {
                 notificationCount++;
                 document.getElementById('notificationCount').textContent = notificationCount;
                 addNotification(notification.type, notification.message, notification.type.toLowerCase());
+                console.log('Notification received:', notification);
             });
 
             socket.on('connect_error', (error) => {
                 updateWsStatus('disconnected', `Connection failed: ${error.message}`);
+                console.error('WebSocket connection error:', error);
+                
+                // If token is invalid, clear it
+                if (error.message.includes('Authentication error')) {
+                    clearStoredUserData();
+                    authToken = null;
+                    showAuthStatus('Authentication failed. Please login again.', 'error');
+                }
+            });
+
+            socket.on('reconnect', (attemptNumber) => {
+                updateWsStatus('connected', `Reconnected to WebSocket (attempt ${attemptNumber})`);
+                console.log('WebSocket reconnected after', attemptNumber, 'attempts');
+            });
+
+            socket.on('reconnect_error', (error) => {
+                console.error('WebSocket reconnection error:', error);
             });
         }
 
